@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useRef } from 'react';
-import AgoraRTC from 'agora-rtc-sdk-ng';
-import { useNavigate, useParams } from 'react-router-dom';
+import React, { useEffect, useState, useRef } from "react";
+import AgoraRTC from "agora-rtc-sdk-ng";
+import { useNavigate, useParams } from "react-router-dom";
 
-const APP_ID = 'a178b220f82a4fcea128db18db32efc5';
-const SERVER_URL = 'http://localhost:5000';
+const APP_ID = "a178b220f82a4fcea128db18db32efc5";
+const SERVER_URL = "http://localhost:5000";
 
 function Broadcaster() {
     const [client, setClient] = useState(null);
@@ -11,40 +11,50 @@ function Broadcaster() {
     const videoRef = useRef(null);
     const [isStreaming, setIsStreaming] = useState(false);
     const navigate = useNavigate();
-    const { channelName } = useParams(); 
+    const { channelName } = useParams();
 
     const startStreaming = async () => {
         try {
-            const uid = Math.floor(Math.random() * 100000); 
+            const uid = Math.floor(Math.random() * 100000);
             const response = await fetch(`${SERVER_URL}/generate-token`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ channelName, uid, role: 'publisher' }),
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ channelName, uid, role: "publisher" }),
             });
 
             const { token } = await response.json();
-            await client.setClientRole('host');
+            await client.setClientRole("host");
             await client.join(APP_ID, channelName, token, uid);
 
-            // 🔥 Start screen sharing instead of camera
+            // ✅ Capture screen with system audio enabled
             const screenTrack = await AgoraRTC.createScreenVideoTrack({
                 encoderConfig: "1080p_2",
+                withAudio: "enable", // 🔥 Ensures system audio is captured
             });
 
-            // 🎤 Add audio track for voice (optional)
-            const audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+            // ✅ Capture microphone audio separately (optional)
+            let audioTrack;
+            if (!screenTrack.hasAudio) {
+                console.warn("Screen track does not have system audio, using microphone.");
+                audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+            }
 
-            screenTrack.play(videoRef.current); // Show screen share locally
-            await client.publish([screenTrack, audioTrack]); // Publish screen + audio
+            // Play screen share locally
+            screenTrack.play(videoRef.current);
 
-            setLocalTracks([screenTrack, audioTrack]);
+            // ✅ Publish both screen and audio tracks
+            const tracksToPublish = [screenTrack];
+            if (audioTrack) tracksToPublish.push(audioTrack);
+            await client.publish(tracksToPublish);
+
+            setLocalTracks(tracksToPublish);
             setIsStreaming(true);
-            console.log('Screen sharing started');
+            console.log("Screen sharing started");
 
             // Handle screen sharing stop event
-            screenTrack.on('track-ended', () => {
+            screenTrack.on("track-ended", () => {
                 console.log("Screen sharing stopped!");
-                stopStreaming(); // Auto-stop when user ends share
+                stopStreaming();
             });
 
         } catch (error) {
@@ -55,7 +65,7 @@ function Broadcaster() {
     const stopStreaming = async () => {
         try {
             await client.unpublish(localTracks);
-            localTracks.forEach(track => {
+            localTracks.forEach((track) => {
                 track.stop();
                 track.close();
             });
@@ -63,8 +73,8 @@ function Broadcaster() {
             await client.leave();
             setClient(null);
             setIsStreaming(false);
-            navigate('/'); 
-            console.log('Broadcaster stopped stream');
+            navigate("/");
+            console.log("Broadcaster stopped stream");
         } catch (error) {
             console.error("Error stopping stream:", error);
         }
@@ -73,7 +83,7 @@ function Broadcaster() {
     useEffect(() => {
         const initAgora = async () => {
             try {
-                const agoraClient = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' });
+                const agoraClient = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
                 setClient(agoraClient);
             } catch (error) {
                 console.error("Error initializing Agora:", error);
@@ -84,10 +94,10 @@ function Broadcaster() {
 
         return () => {
             if (client) {
-                client.leave().then(() => {
-                    console.log("Client left channel");
-                }).catch(e => console.error("Leave error", e));
-                localTracks.forEach(track => {
+                client.leave()
+                    .then(() => console.log("Client left channel"))
+                    .catch((e) => console.error("Leave error", e));
+                localTracks.forEach((track) => {
                     track.stop();
                     track.close();
                 });
@@ -99,13 +109,13 @@ function Broadcaster() {
 
     return (
         <div>
-            <h2>Broadcaster (Screen Sharing)</h2>
+            <h2>Broadcaster (Screen Sharing with Audio)</h2>
             {!isStreaming ? (
                 <button onClick={startStreaming}>Start Screen Share</button>
             ) : (
                 <button onClick={stopStreaming}>Stop Sharing</button>
             )}
-            <video ref={videoRef} autoPlay playsInline style={{ width: '640px', height: '480px', background: '#000' }}></video>
+            <video ref={videoRef} autoPlay playsInline style={{ width: "640px", height: "480px", background: "#000" }}></video>
         </div>
     );
 }

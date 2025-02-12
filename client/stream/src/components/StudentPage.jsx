@@ -7,7 +7,7 @@ const SERVER_URL = 'http://localhost:5000';
 
 function StudentPage() {
     const { channelName } = useParams();
-    const videoContainerRef = useRef(null); // Agora Video Container
+    const videoContainerRef = useRef(null); // Video container reference
     const clientRef = useRef(null);
     const [remoteUsers, setRemoteUsers] = useState({});
 
@@ -19,7 +19,7 @@ function StudentPage() {
                 const agoraClient = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' });
                 clientRef.current = agoraClient;
 
-                // 🔹 Ensure a valid token
+                // 🔹 Fetch the token
                 const uid = 0;
                 const response = await fetch(`${SERVER_URL}/generate-token`, {
                     method: 'POST',
@@ -36,6 +36,7 @@ function StudentPage() {
                 await agoraClient.join(APP_ID, channelName, token, uid);
                 console.log('Joined Agora channel:', channelName);
 
+                // 📌 Handle new remote user joining
                 agoraClient.on('user-published', async (user, mediaType) => {
                     console.log('User Published:', user.uid, mediaType);
                     await agoraClient.subscribe(user, mediaType);
@@ -45,23 +46,48 @@ function StudentPage() {
                         const videoTrack = user.videoTrack;
                         console.log('Remote Video Track:', videoTrack);
 
-                        // 🔹 Ensure only one video instance
-                        if (videoContainerRef.current) {
-                            videoContainerRef.current.innerHTML = ""; // Remove any duplicate video
-                            videoTrack.play(videoContainerRef.current);
-                            console.log('Video playing successfully');
+                        if (videoTrack && videoContainerRef.current) {
+                            try {
+                                // Clear existing video and play new one
+                                videoContainerRef.current.innerHTML = '';
+                                videoTrack.play(videoContainerRef.current);
+                                console.log('Video playing successfully');
+                            } catch (err) {
+                                console.error('Error playing video:', err);
+                            }
                         }
 
-                        setRemoteUsers((prevUsers) => ({ ...prevUsers, [user.uid]: videoTrack }));
+                        setRemoteUsers((prevUsers) => ({ ...prevUsers, [user.uid]: { videoTrack } }));
+                    } 
+
+                    // 🎤 Handle audio track
+                    if (mediaType === 'audio') {
+                        const audioTrack = user.audioTrack;
+                        if (audioTrack) {
+                            audioTrack.play(); // Play the audio
+                            console.log('Audio playing successfully');
+                        }
+
+                        setRemoteUsers((prevUsers) => ({
+                            ...prevUsers,
+                            [user.uid]: { ...prevUsers[user.uid], audioTrack },
+                        }));
                     }
                 });
 
-                agoraClient.on('user-unpublished', (user) => {
+                // 📌 Handle user leaving/unpublishing
+                agoraClient.on('user-unpublished', (user, mediaType) => {
                     console.log('User Unpublished:', user.uid);
+
                     setRemoteUsers((prevUsers) => {
                         const updatedUsers = { ...prevUsers };
                         if (updatedUsers[user.uid]) {
-                            updatedUsers[user.uid].stop();
+                            if (mediaType === 'video' && updatedUsers[user.uid].videoTrack) {
+                                updatedUsers[user.uid].videoTrack.stop();
+                            }
+                            if (mediaType === 'audio' && updatedUsers[user.uid].audioTrack) {
+                                updatedUsers[user.uid].audioTrack.stop();
+                            }
                             delete updatedUsers[user.uid];
                         }
                         return updatedUsers;
